@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, RefreshCw, Search, Trash2, TrendingUp, AlertCircle, Globe, Folder, ArrowLeft, FolderPlus, ExternalLink, LayoutDashboard, PenTool, Menu, X, Image as ImageIcon, Shirt, MapPin, BarChart2, AlertTriangle, LogOut } from 'lucide-react';
-import { KeywordTrack, RankHistoryItem, Project } from './types';
+import { Plus, RefreshCw, Search, Trash2, TrendingUp, AlertCircle, Globe, Folder, ArrowLeft, FolderPlus, ExternalLink, LayoutDashboard, PenTool, Menu, X, Image as ImageIcon, Shirt, MapPin, BarChart2, AlertTriangle, LogOut, Users, Clock, Wallet } from 'lucide-react';
+import { KeywordTrack, RankHistoryItem, Project, User } from './types';
 import * as storageService from './services/storage';
 import * as geminiService from './services/gemini';
 import AddKeywordModal from './components/AddKeywordModal';
@@ -12,12 +12,14 @@ import CheckinGenerator from './components/CheckinGenerator';
 import AnalyticsReporter from './components/AnalyticsReporter';
 import RankChart from './components/RankChart';
 import Login from './components/Login';
+import MemberManager from './components/MemberManager';
+import FinanceManager from './components/FinanceManager';
 
-type View = 'tracker' | 'writer' | 'image-gen' | 'fashion' | 'checkin' | 'analytics';
+type View = 'tracker' | 'writer' | 'image-gen' | 'fashion' | 'checkin' | 'analytics' | 'members' | 'finance';
 
 const App: React.FC = () => {
   // Auth State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Navigation State
   const [currentView, setCurrentView] = useState<View>('tracker');
@@ -39,10 +41,21 @@ const App: React.FC = () => {
 
   // Load initial data
   useEffect(() => {
-    // Check Auth
-    const storedAuth = localStorage.getItem('app_is_authenticated');
-    if (storedAuth === 'true') {
-      setIsAuthenticated(true);
+    // Check Auth - Persist session
+    // Try localStorage first (Remember Me), then sessionStorage (One-time session)
+    let storedUserJson = localStorage.getItem('app_current_user');
+    if (!storedUserJson) {
+      storedUserJson = sessionStorage.getItem('app_current_user');
+    }
+
+    if (storedUserJson) {
+      try {
+        const user = JSON.parse(storedUserJson);
+        setCurrentUser(user);
+      } catch (e) {
+        localStorage.removeItem('app_current_user');
+        sessionStorage.removeItem('app_current_user');
+      }
     }
 
     // Check if API KEY is present
@@ -54,6 +67,9 @@ const App: React.FC = () => {
     const loadedKeywords = storageService.loadKeywords();
     setProjects(loadedProjects);
     setKeywords(loadedKeywords);
+
+    // Ensure root user exists even if not logged in
+    storageService.loadUsers();
 
     // Global Auto-check (checks stale keywords across ALL projects)
     if (!hasAutoCheckedRef.current) {
@@ -79,15 +95,17 @@ const App: React.FC = () => {
   }, []);
 
   // Auth Handlers
-  const handleLoginSuccess = () => {
-    localStorage.setItem('app_is_authenticated', 'true');
-    setIsAuthenticated(true);
+  const handleLoginSuccess = (user: User, remember: boolean) => {
+    const storage = remember ? localStorage : sessionStorage;
+    storage.setItem('app_current_user', JSON.stringify(user));
+    setCurrentUser(user);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('app_is_authenticated');
-    setIsAuthenticated(false);
-    // Reset view states if needed
+    localStorage.removeItem('app_current_user');
+    sessionStorage.removeItem('app_current_user');
+    setCurrentUser(null);
+    // Reset view states
     setCurrentView('tracker');
     setActiveProjectId(null);
   };
@@ -239,6 +257,177 @@ const App: React.FC = () => {
 
   // --- RENDER HELPERS ---
 
+  const renderTrackerContent = () => (
+    <div className="w-full h-full flex flex-col bg-slate-950 text-slate-200">
+      {/* Top Bar: Project Selector & Actions */}
+      <div className="border-b border-slate-800 bg-slate-900/50 p-4 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full">
+            {projects.map(p => (
+              <button
+                key={p.id}
+                onClick={() => setActiveProjectId(p.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition flex items-center gap-2 border ${
+                  activeProjectId === p.id 
+                    ? 'bg-blue-600 border-blue-500 text-white' 
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                <Folder size={16} />
+                {p.name}
+              </button>
+            ))}
+            <button
+               onClick={() => setIsProjectModalOpen(true)}
+               className="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition flex items-center gap-2 bg-slate-800 border border-dashed border-slate-600 text-slate-400 hover:text-white hover:border-slate-500 hover:bg-slate-700"
+            >
+              <FolderPlus size={16} /> Thêm Dự Án
+            </button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      {!activeProjectId ? (
+         <div className="flex-1 flex flex-col items-center justify-center p-8 text-slate-500">
+            <Folder size={64} className="mb-4 opacity-20" />
+            <h3 className="text-lg font-medium text-slate-300 mb-2">Chọn hoặc tạo dự án</h3>
+            <p className="max-w-md text-center">Bắt đầu theo dõi thứ hạng từ khóa bằng cách chọn một dự án ở trên hoặc tạo mới.</p>
+         </div>
+      ) : (
+         <div className="flex-1 flex flex-col min-h-0">
+             {/* Toolbar */}
+             <div className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                 <div className="relative w-full sm:w-auto">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="Tìm từ khóa..." 
+                      value={filterText}
+                      onChange={e => setFilterText(e.target.value)}
+                      className="w-full sm:w-64 bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:ring-1 focus:ring-blue-500 outline-none"
+                    />
+                 </div>
+                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button 
+                       onClick={handleCheckAllInProject}
+                       disabled={globalLoading}
+                       className="px-4 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-medium flex items-center gap-2 transition disabled:opacity-50"
+                    >
+                       <RefreshCw size={16} className={globalLoading ? "animate-spin" : ""} />
+                       Kiểm tra tất cả
+                    </button>
+                    <button 
+                       onClick={() => setIsKeywordModalOpen(true)}
+                       className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition shadow-lg shadow-blue-900/20"
+                    >
+                       <Plus size={16} />
+                       Thêm Từ Khóa
+                    </button>
+                    <button 
+                       onClick={() => activeProjectId && handleDeleteProject(activeProjectId)}
+                       className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition"
+                       title="Xóa dự án"
+                    >
+                       <Trash2 size={18} />
+                    </button>
+                 </div>
+             </div>
+             
+             {/* API Key Warning */}
+             {isApiKeyMissing && (
+                <div className="mx-4 mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded-lg flex items-center gap-3 text-red-200 text-sm">
+                   <AlertCircle size={18} className="shrink-0" />
+                   <span>Chưa cấu hình API Key. Vui lòng thêm API Key vào file .env hoặc cấu hình hệ thống.</span>
+                </div>
+             )}
+
+             {/* Keywords Table */}
+             <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pb-4">
+                 {currentProjectKeywords.length === 0 ? (
+                    <div className="h-64 border border-dashed border-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-500">
+                       <Search size={48} className="mb-4 opacity-20" />
+                       <p>Chưa có từ khóa nào trong dự án này.</p>
+                       <button onClick={() => setIsKeywordModalOpen(true)} className="mt-2 text-blue-400 hover:underline">Thêm từ khóa ngay</button>
+                    </div>
+                 ) : (
+                    <div className="space-y-4">
+                       {currentProjectKeywords.map(keyword => (
+                          <div key={keyword.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 transition hover:border-slate-700">
+                             <div className="flex items-start justify-between gap-4 mb-4">
+                                <div>
+                                   <div className="flex items-center gap-2 mb-1">
+                                      <h4 className="font-bold text-white text-lg">{keyword.keyword}</h4>
+                                      <a href={`https://${keyword.domain}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 hover:text-blue-400 flex items-center gap-1">
+                                         <Globe size={12} /> {keyword.domain}
+                                      </a>
+                                   </div>
+                                   <div className="flex items-center gap-3 text-xs text-slate-400">
+                                      <span className="flex items-center gap-1"><Clock size={12} /> Cập nhật: {keyword.lastChecked ? new Date(keyword.lastChecked).toLocaleString('vi-VN') : 'Chưa kiểm tra'}</span>
+                                   </div>
+                                </div>
+                                <div className="text-right">
+                                   <div className={`text-3xl font-black ${getRankColor(keyword.currentRank)}`}>
+                                      {keyword.isUpdating ? (
+                                         <RefreshCw className="animate-spin inline" size={24} />
+                                      ) : (
+                                         keyword.currentRank === 0 ? '-' : `#${keyword.currentRank}`
+                                      )}
+                                   </div>
+                                   <div className="mt-1 flex justify-end">
+                                      {getRankChange(keyword.history)}
+                                   </div>
+                                </div>
+                             </div>
+                             
+                             {/* Chart */}
+                             <div className="border-t border-slate-800 pt-4">
+                                <RankChart history={keyword.history} />
+                             </div>
+
+                             <div className="flex justify-end gap-2 mt-4 border-t border-slate-800 pt-3">
+                                <button 
+                                   onClick={() => processBatch([keyword.id])}
+                                   disabled={keyword.isUpdating}
+                                   className="text-xs font-medium text-blue-400 hover:text-blue-300 flex items-center gap-1 px-2 py-1 hover:bg-blue-900/20 rounded transition"
+                                >
+                                   <RefreshCw size={12} className={keyword.isUpdating ? "animate-spin" : ""} /> Check lại
+                                </button>
+                                <button 
+                                   onClick={() => handleDeleteKeyword(keyword.id)}
+                                   className="text-xs font-medium text-slate-500 hover:text-red-400 flex items-center gap-1 px-2 py-1 hover:bg-slate-800 rounded transition"
+                                >
+                                   <Trash2 size={12} /> Xóa
+                                </button>
+                             </div>
+                             
+                             {keyword.lastError && (
+                                <div className="mt-2 text-xs text-red-400 flex items-center gap-1">
+                                   <AlertCircle size={12} /> {keyword.lastError}
+                                </div>
+                             )}
+                          </div>
+                       ))}
+                    </div>
+                 )}
+             </div>
+         </div>
+      )}
+
+      {/* Modals */}
+      <AddKeywordModal 
+        isOpen={isKeywordModalOpen}
+        onClose={() => setIsKeywordModalOpen(false)}
+        onAdd={handleAddKeyword}
+        initialDomain={activeProject?.domain}
+      />
+      
+      <AddProjectModal
+        isOpen={isProjectModalOpen}
+        onClose={() => setIsProjectModalOpen(false)}
+        onAdd={handleAddProject}
+      />
+    </div>
+  );
+
   const renderSidebar = () => (
     <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static flex flex-col`}>
       <div className="flex items-center gap-2 p-6 border-b border-slate-800 h-16 shrink-0">
@@ -325,257 +514,61 @@ const App: React.FC = () => {
           <BarChart2 size={18} />
           Báo Cáo Analytics
         </button>
+        
+        <button
+          onClick={() => { setCurrentView('finance'); if(window.innerWidth < 1024) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium transition ${
+            currentView === 'finance' 
+              ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-600/20' 
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Wallet size={18} />
+          Quản Lý Chi Tiêu
+        </button>
+
+        {/* Admin Only Menu */}
+        {currentUser?.role === 'admin' && (
+          <div className="pt-4 mt-4 border-t border-slate-800">
+             <div className="px-4 text-[10px] uppercase font-bold text-slate-500 mb-2">Admin</div>
+             <button
+              onClick={() => { setCurrentView('members'); if(window.innerWidth < 1024) setIsSidebarOpen(false); }}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium transition ${
+                currentView === 'members' 
+                  ? 'bg-slate-800 text-white' 
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Users size={18} />
+              Quản lý thành viên
+            </button>
+          </div>
+        )}
       </nav>
       
       <div className="p-4 border-t border-slate-800 shrink-0">
+        <div className="flex items-center gap-3 mb-4 px-2">
+            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">
+                {currentUser?.fullName.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-white truncate">{currentUser?.fullName}</div>
+                <div className="text-[10px] text-slate-400 capitalize">{currentUser?.role}</div>
+            </div>
+        </div>
         <button 
           onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-red-400 hover:bg-red-900/10 hover:text-red-300 transition"
+          className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-900/10 hover:text-red-300 transition"
         >
           <LogOut size={18} />
           Đăng xuất
         </button>
-        <div className="bg-slate-800 rounded-lg p-3 mt-3 border border-slate-700">
-           <div className="text-xs text-slate-500 mb-1">Dự án đang theo dõi</div>
-           <div className="text-xl font-bold text-white">{projects.length}</div>
-        </div>
       </div>
     </div>
   );
 
-  const renderTrackerContent = () => (
-    <>
-      {/* Header specific to Tracker */}
-      <header className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button className="lg:hidden text-slate-400" onClick={() => setIsSidebarOpen(true)}>
-              <Menu size={24} />
-            </button>
-            {activeProjectId && (
-              <button 
-                onClick={() => setActiveProjectId(null)}
-                className="p-2 -ml-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition"
-              >
-                <ArrowLeft size={20} />
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-white hidden sm:block">
-              {activeProjectId ? activeProject?.name : 'Tổng quan dự án'}
-            </h2>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            {!activeProjectId ? (
-              <button
-                onClick={() => setIsProjectModalOpen(true)}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-blue-900/20"
-              >
-                <FolderPlus size={18} />
-                <span className="hidden sm:inline">Dự án mới</span>
-              </button>
-            ) : (
-              <>
-                 <button
-                  onClick={handleCheckAllInProject}
-                  disabled={globalLoading || currentProjectKeywords.length === 0}
-                  className={`flex items-center gap-2 px-3 sm:px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm font-medium transition border border-slate-700 ${globalLoading || currentProjectKeywords.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <RefreshCw size={16} className={globalLoading ? 'animate-spin' : ''} />
-                  <span className="hidden sm:inline">Kiểm tra</span>
-                </button>
-                <button
-                  onClick={() => setIsKeywordModalOpen(true)}
-                  className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-blue-900/20"
-                >
-                  <Plus size={18} />
-                  <span className="hidden sm:inline">Từ khóa</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Main Tracker Body */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* API KEY WARNING BANNER */}
-        {isApiKeyMissing && (
-          <div className="mb-6 bg-red-900/20 border border-red-500/50 rounded-xl p-4 flex items-start gap-4 animate-pulse">
-             <div className="bg-red-900/50 p-2 rounded-full text-red-500 shrink-0">
-                <AlertTriangle size={24} />
-             </div>
-             <div>
-                <h3 className="font-bold text-red-400 mb-1">Chưa cấu hình API Key</h3>
-                <p className="text-sm text-red-200/80 mb-2">
-                   Ứng dụng không tìm thấy <code>GEMINI_API_KEY</code>. Các tính năng AI sẽ không hoạt động.
-                </p>
-                <div className="text-xs text-red-200/60 bg-red-950/50 p-2 rounded font-mono">
-                   Vào Netlify &gt; Site Settings &gt; Environment variables &gt; Thêm Key: <code>API_KEY</code>
-                </div>
-             </div>
-          </div>
-        )}
-
-        {!activeProjectId && (
-          <>
-             {projects.length === 0 ? (
-              <div className="text-center py-20 bg-slate-800/50 rounded-3xl border border-dashed border-slate-700">
-                <div className="inline-block p-4 bg-slate-800 rounded-full mb-4">
-                  <Folder size={32} className="text-slate-500" />
-                </div>
-                <h3 className="text-xl font-medium text-white mb-2">Chưa có dự án nào</h3>
-                <p className="text-slate-400 mb-6 max-w-sm mx-auto">Tạo dự án để bắt đầu quản lý và theo dõi thứ hạng từ khóa.</p>
-                <button onClick={() => setIsProjectModalOpen(true)} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition">Tạo dự án ngay</button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {projects.map(project => {
-                  const projectKeywords = keywords.filter(k => k.projectId === project.id);
-                  const top3 = projectKeywords.filter(k => k.currentRank > 0 && k.currentRank <= 3).length;
-                  return (
-                    <div key={project.id} onClick={() => setActiveProjectId(project.id)} className="bg-slate-800 border border-slate-700 rounded-xl p-6 cursor-pointer hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-900/10 transition group relative">
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }} className="absolute top-4 right-4 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1" title="Xóa dự án"><Trash2 size={16} /></button>
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="bg-slate-700/50 p-3 rounded-lg text-blue-400"><Folder size={24} /></div>
-                        <div>
-                          <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition">{project.name}</h3>
-                          <div className="flex items-center gap-1 text-xs text-slate-400"><Globe size={10} />{project.domain}</div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700/50">
-                        <div><div className="text-xs text-slate-500 mb-1">Từ khóa</div><div className="text-xl font-semibold text-white">{projectKeywords.length}</div></div>
-                        <div><div className="text-xs text-slate-500 mb-1">Top 3</div><div className="text-xl font-semibold text-green-400">{top3}</div></div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* --- DETAIL VIEW: KEYWORD LIST --- */}
-        {activeProjectId && (
-          <div className="space-y-6">
-            
-            {/* Search/Filter Bar */}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input 
-                  type="text" 
-                  placeholder="Tìm từ khóa..." 
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2.5 text-white focus:ring-2 focus:ring-blue-500 outline-none transition"
-                />
-              </div>
-            </div>
-
-            {/* Keywords Table/List */}
-            {currentProjectKeywords.length === 0 ? (
-              <div className="text-center py-12 bg-slate-800/30 rounded-xl border border-dashed border-slate-700">
-                <p className="text-slate-400 mb-4">{filterText ? 'Không tìm thấy từ khóa nào.' : 'Dự án này chưa có từ khóa.'}</p>
-                {!filterText && (
-                  <button onClick={() => setIsKeywordModalOpen(true)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition border border-slate-700">Thêm từ khóa ngay</button>
-                )}
-              </div>
-            ) : (
-              <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
-                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-900/50 border-b border-slate-700 text-xs text-slate-400 uppercase tracking-wider">
-                        <th className="p-4 font-medium">Từ khóa</th>
-                        <th className="p-4 font-medium text-center">Thứ hạng</th>
-                        <th className="p-4 font-medium text-center">Thay đổi</th>
-                        <th className="p-4 font-medium min-w-[300px]">Lịch sử (30 ngày)</th>
-                        <th className="p-4 font-medium text-right">Hành động</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700/50">
-                      {currentProjectKeywords.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-700/30 transition group">
-                          <td className="p-4">
-                            <div className="font-medium text-white">{item.keyword}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">{item.domain}</div>
-                            {item.lastError && (
-                              <div className="flex items-center gap-1 text-xs text-red-400 mt-1">
-                                <AlertCircle size={10} /> {item.lastError}
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-4 text-center">
-                            {item.isUpdating ? (
-                              <RefreshCw size={20} className="animate-spin text-blue-500 mx-auto" />
-                            ) : (
-                              <div className={`text-2xl font-bold ${getRankColor(item.currentRank)}`}>
-                                {item.currentRank > 0 ? item.currentRank : '-'}
-                              </div>
-                            )}
-                            <div className="text-[10px] text-slate-500 mt-1">
-                              {item.lastChecked ? new Date(item.lastChecked).toLocaleDateString('vi-VN', {day:'2-digit', month:'2-digit'}) : 'Chưa check'}
-                            </div>
-                          </td>
-                          <td className="p-4 text-center">
-                            {getRankChange(item.history)}
-                          </td>
-                          <td className="p-4">
-                            <div className="h-12 w-full">
-                              {item.history.length > 0 && (
-                                <RankChart history={item.history} />
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                               <button 
-                                onClick={() => processBatch([item.id])}
-                                disabled={item.isUpdating}
-                                className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition"
-                                title="Kiểm tra lại"
-                              >
-                                <RefreshCw size={16} className={item.isUpdating ? 'animate-spin' : ''} />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteKeyword(item.id)}
-                                className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-                                title="Xóa"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </main>
-
-      {/* Modals */}
-      <AddKeywordModal 
-        isOpen={isKeywordModalOpen} 
-        onClose={() => setIsKeywordModalOpen(false)} 
-        onAdd={handleAddKeyword}
-        initialDomain={activeProject?.domain}
-      />
-      <AddProjectModal
-        isOpen={isProjectModalOpen}
-        onClose={() => setIsProjectModalOpen(false)}
-        onAdd={handleAddProject}
-      />
-    </>
-  );
-
   // If NOT authenticated, show Login Screen
-  if (!isAuthenticated) {
+  if (!currentUser) {
     return <Login onLogin={handleLoginSuccess} />;
   }
 
@@ -591,6 +584,8 @@ const App: React.FC = () => {
         {currentView === 'fashion' && <FashionGenerator />}
         {currentView === 'checkin' && <CheckinGenerator />}
         {currentView === 'analytics' && <AnalyticsReporter projects={projects} />}
+        {currentView === 'finance' && <FinanceManager />}
+        {currentView === 'members' && currentUser.role === 'admin' && <MemberManager currentUser={currentUser} />}
       </div>
       
       {/* Mobile Overlay */}

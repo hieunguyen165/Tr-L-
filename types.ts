@@ -95,3 +95,49 @@ export interface GoogleUserInfo {
   name: string;
   picture: string;
 }
+
+// --- User Management Types ---
+export interface User {
+  id: string;
+  username: string;
+  password: string; // In a real app, never store plain text passwords. For this local demo, it is acceptable.
+  fullName: string;
+  role: 'admin' | 'member'; // 'admin' can manage users, 'member' can only use features
+  createdAt: number;
+}
+
+// --- Finance Types ---
+export type TransactionCategory = 'Ăn uống' | 'Đi chơi' | 'Di chuyển' | 'Mua sắm' | 'Hóa đơn' | 'Lương' | 'Thưởng' | 'Đầu tư' | 'Khác';
+export type AccountType = 'cash' | 'bank' | 'investment' | 'saving' | 'other';
+export type TransactionType = 'expense' | 'income';
+
+export interface Account {
+  id: string;
+  name: string;
+  type: AccountType;
+  balance: number;
+  color?: string;
+}
+
+export interface Transaction {
+  id: string;
+  amount: number;
+  category: TransactionCategory;
+  description: string;
+  date: string; // ISO Date (YYYY-MM-DD)
+  timestamp: number;
+  accountId?: string; // Link to specific account
+  type: TransactionType;
+}
+
+export interface MonthlyBudget {
+  month: string; // YYYY-MM
+  limit: number;
+}
+
+export interface ParsedTransactionResult {
+  amount: number;
+  category: TransactionCategory;
+  description: string;
+  type: TransactionType;
+}

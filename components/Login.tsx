@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
-import { Lock, User, LogIn, AlertCircle } from 'lucide-react';
+import { Lock, User, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import * as storageService from '../services/storage';
+import { User as UserType } from '../types';
 
 interface LoginProps {
-  onLogin: () => void;
+  onLogin: (user: UserType, remember: boolean) => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,8 +23,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     // Simulate a small network delay for better UX
     setTimeout(() => {
-      if (username === 'Xuanhieufi' && password === 'Thienhy99') {
-        onLogin();
+      const user = storageService.authenticateUser(username, password);
+
+      if (user) {
+        onLogin(user, rememberMe);
       } else {
         setError('Tên đăng nhập hoặc mật khẩu không đúng.');
         setLoading(false);
@@ -76,13 +83,33 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   <Lock size={18} className="text-slate-500" />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-10 py-3 text-white placeholder-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
                   placeholder="Nhập mật khẩu"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 transition"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
+            </div>
+
+            <div className="flex items-center">
+              <input
+                id="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900"
+              />
+              <label htmlFor="remember-me" className="ml-2 text-sm text-slate-400 cursor-pointer select-none">
+                Ghi nhớ đăng nhập
+              </label>
             </div>
 
             <button
@@ -102,7 +129,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <div className="mt-6 text-center">
             <p className="text-xs text-slate-500">
-              Chỉ dành cho quản trị viên được cấp quyền.
+              Hệ thống dành riêng cho nội bộ.
             </p>
           </div>
         </div>

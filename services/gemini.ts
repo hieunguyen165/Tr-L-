@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { CheckResult, SeoArticleResponse, AnalyticsData, AnalyticsReport } from '../types';
+import { CheckResult, SeoArticleResponse, AnalyticsData, AnalyticsReport, ParsedTransactionResult } from '../types';
 
 // Ensure API Key exists to avoid instant crash on init if empty
 const apiKey = process.env.API_KEY || '';
@@ -432,4 +432,59 @@ export const analyzeAnalyticsData = async (data: AnalyticsData): Promise<Analyti
     console.error("Error analyzing analytics:", error);
     return null;
   }
+};
+
+export const parseFinancialText = async (text: string): Promise<ParsedTransactionResult | null> => {
+    if (!apiKey) return null;
+    try {
+        const prompt = `
+            Analyze this financial text: "${text}"
+
+            EXTRACT AND TRANSFORM:
+            1. Amount: Convert to number. Normalize "k", "nghìn", "củ", "triệu" (e.g., "35k" -> 35000, "2 củ" -> 2000000).
+            2. Type: Determine if this is an Expense ('expense') or Income ('income').
+               - Keywords for Income: "lương", "thưởng", "thu", "bán", "được cho", "lãi", "nhận".
+               - Keywords for Expense: "mua", "trả", "chi", "tốn", "mất", "cafe", "ăn", "xăng".
+            3. Category: Choose ONE of ['Ăn uống', 'Đi chơi', 'Di chuyển', 'Mua sắm', 'Hóa đơn', 'Lương', 'Thưởng', 'Đầu tư', 'Khác'].
+            
+            STRICT RULES:
+            - If text contains words like "cafe", "coffee", "trà sữa", "ăn phố", "xem phim" -> Map to Category "Đi chơi".
+            - "Ăn sáng/trưa/tối", "cơm", "phở" -> Map to "Ăn uống".
+            - "Xăng", "grab", "taxi" -> Map to "Di chuyển".
+            - "Shopee", "lazada", "tạp hóa" -> Map to "Mua sắm".
+            - "Chứng khoán", "coin", "vàng", "đất", "tiết kiệm" -> Map to "Đầu tư".
+            - "Lương", "salary" -> Map to "Lương".
+            
+            4. Description: A short, clean description of the transaction.
+
+            Return JSON.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        amount: { type: Type.NUMBER },
+                        type: { type: Type.STRING, enum: ['income', 'expense'] },
+                        category: { type: Type.STRING, enum: ['Ăn uống', 'Đi chơi', 'Di chuyển', 'Mua sắm', 'Hóa đơn', 'Lương', 'Thưởng', 'Đầu tư', 'Khác'] },
+                        description: { type: Type.STRING }
+                    },
+                    required: ["amount", "type", "category", "description"]
+                },
+                thinkingConfig: { thinkingBudget: 0 }
+            }
+        });
+
+        const resText = response.text;
+        if (!resText) return null;
+        return JSON.parse(resText) as ParsedTransactionResult;
+
+    } catch (e) {
+        console.error("Error parsing finance:", e);
+        return null;
+    }
 };
