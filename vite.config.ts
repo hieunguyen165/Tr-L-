@@ -1,14 +1,18 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  define: {
-    // Vite sẽ thay thế 'process.env.API_KEY' trong code bằng giá trị thực tế khi build.
-    // Chúng ta kiểm tra ưu tiên:
-    // 1. process.env.API_KEY (Biến chuẩn)
-    // 2. process.env.gemini_api_key (Tên biến bạn đặt trong GitHub Secrets)
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || process.env.gemini_api_key || '')
-  }
+export default defineConfig(({ mode }) => {
+  // Load env file based on `mode` in the current working directory.
+  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
+  // Fix: Cast process to any to avoid "Property 'cwd' does not exist on type 'Process'" error
+  const env = loadEnv(mode, (process as any).cwd(), '');
+
+  return {
+    plugins: [react()],
+    define: {
+      // Prioritize env variables from loadEnv (Netlify/Local .env) then process.env (System)
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.gemini_api_key || process.env.API_KEY || process.env.gemini_api_key || '')
+    }
+  };
 });

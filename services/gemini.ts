@@ -1,7 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CheckResult, SeoArticleResponse, AnalyticsData, AnalyticsReport } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Ensure API Key exists to avoid instant crash on init if empty
+const apiKey = process.env.API_KEY || '';
+const ai = new GoogleGenAI({ apiKey });
 
 // Using gemini-3-flash-preview for fast and grounded search capabilities
 const MODEL_NAME = 'gemini-3-flash-preview';
@@ -9,6 +11,10 @@ const IMAGEN_MODEL = 'imagen-4.0-generate-001';
 const IMAGE_EDIT_MODEL = 'gemini-2.5-flash-image';
 
 export const checkKeywordRank = async (keyword: string, domain: string): Promise<CheckResult> => {
+  if (!apiKey) {
+      console.error("API Key is missing");
+      return { rank: 0, found: false, snippet: "Chưa cấu hình API Key" };
+  }
   try {
     // The prompt is engineered to act as a strict SERP analyzer
     const prompt = `
@@ -79,6 +85,7 @@ export const checkKeywordRank = async (keyword: string, domain: string): Promise
 };
 
 export const generateSeoArticle = async (topic: string, keywords: string, tone: string, domain: string = ''): Promise<SeoArticleResponse | null> => {
+  if (!apiKey) return null;
   try {
     const prompt = `
       Bạn là một Chuyên gia Nội dung (Subject Matter Expert) và Chuyên gia SEO Senior với 15 năm kinh nghiệm.
@@ -179,6 +186,7 @@ export const generateSeoArticle = async (topic: string, keywords: string, tone: 
  * Analyzes an input image and returns a detailed prompt suitable for image generation.
  */
 export const analyzeImageForPrompt = async (base64Data: string, mimeType: string): Promise<string> => {
+  if (!apiKey) return "";
   try {
     const response = await ai.models.generateContent({
       model: IMAGE_EDIT_MODEL,
@@ -207,6 +215,7 @@ export const analyzeImageForPrompt = async (base64Data: string, mimeType: string
  * Analyzes a Check-in/Lifestyle reference photo based on 8 strict criteria.
  */
 export const analyzeCheckinReference = async (base64Data: string, mimeType: string): Promise<string> => {
+    if (!apiKey) return "";
     try {
       const prompt = `
         Analyze this "Check-in" lifestyle photo to create a detailed image generation prompt.
@@ -244,6 +253,7 @@ export const analyzeCheckinReference = async (base64Data: string, mimeType: stri
  * Analyzes clothing items to create a detailed fashion prompt
  */
 export const analyzeFashionItem = async (base64Data: string, mimeType: string): Promise<string> => {
+    if (!apiKey) return "";
     try {
       const response = await ai.models.generateContent({
         model: IMAGE_EDIT_MODEL,
@@ -272,6 +282,7 @@ export const analyzeFashionItem = async (base64Data: string, mimeType: string): 
  * Generates 2 images based on text prompt using Imagen 4.
  */
 export const generateSeoImages = async (prompt: string, aspectRatio: string = '16:9'): Promise<string[]> => {
+  if (!apiKey) return [];
   try {
     const response = await ai.models.generateImages({
       model: IMAGEN_MODEL,
@@ -304,6 +315,7 @@ export const generateFashionImage = async (
     references: { data: string; mimeType: string }[], 
     prompt: string
 ): Promise<string[]> => {
+    if (!apiKey) return [];
     try {
         const parts: any[] = [];
         
@@ -351,6 +363,7 @@ export const generateCheckinImage = async (
     faceImage: { data: string; mimeType: string },
     prompt: string
 ): Promise<string[]> => {
+    if (!apiKey) return [];
     // Generate 4 separate requests in parallel to get 4 distinct options
     // Since gemini-2.5-flash-image typically returns 1 image per edit request.
     const promises = Array(4).fill(0).map(() => generateFashionImage([faceImage], prompt));
@@ -369,6 +382,7 @@ export const generateCheckinImage = async (
  * Analyzes website analytics data to provide strategic insights.
  */
 export const analyzeAnalyticsData = async (data: AnalyticsData): Promise<AnalyticsReport | null> => {
+  if (!apiKey) return null;
   try {
     const prompt = `
       You are a Senior Data Analyst and Digital Marketing Strategist.
