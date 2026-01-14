@@ -111,7 +111,7 @@ const CheckinGenerator: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-[calc(100vh-4rem)] flex flex-col bg-slate-950">
+    <div className="w-full h-full flex flex-col bg-slate-950">
         {/* Header Tabs */}
         <div className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">

@@ -577,21 +577,41 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-950 flex flex-col lg:flex-row font-sans text-slate-200">
       {renderSidebar()}
       
-      <div className="flex-1 flex flex-col h-screen overflow-y-auto relative">
-        {currentView === 'tracker' && renderTrackerContent()}
-        {currentView === 'writer' && <SeoWriter />}
-        {currentView === 'image-gen' && <ImageGenerator />}
-        {currentView === 'fashion' && <FashionGenerator />}
-        {currentView === 'checkin' && <CheckinGenerator />}
-        {currentView === 'analytics' && <AnalyticsReporter projects={projects} />}
-        {currentView === 'finance' && <FinanceManager />}
-        {currentView === 'members' && currentUser.role === 'admin' && <MemberManager currentUser={currentUser} />}
+      <div className="flex-1 flex flex-col h-screen bg-slate-950 relative">
+        
+        {/* Mobile Header */}
+        <div className="lg:hidden shrink-0 h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 z-20">
+            <div className="flex items-center gap-2 font-bold text-white text-lg">
+               <div className="bg-blue-600 p-1.5 rounded-lg">
+                 <TrendingUp size={18} className="text-white" />
+               </div>
+               <span>RankTracker AI</span>
+            </div>
+            <button 
+              onClick={() => setIsSidebarOpen(true)} 
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+            >
+                <Menu size={24} />
+            </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto relative scroll-smooth">
+            {currentView === 'tracker' && renderTrackerContent()}
+            {currentView === 'writer' && <SeoWriter />}
+            {currentView === 'image-gen' && <ImageGenerator />}
+            {currentView === 'fashion' && <FashionGenerator />}
+            {currentView === 'checkin' && <CheckinGenerator />}
+            {currentView === 'analytics' && <AnalyticsReporter projects={projects} />}
+            {currentView === 'finance' && <FinanceManager />}
+            {currentView === 'members' && currentUser.role === 'admin' && <MemberManager currentUser={currentUser} />}
+        </div>
+
       </div>
       
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden backdrop-blur-sm animate-in fade-in"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}

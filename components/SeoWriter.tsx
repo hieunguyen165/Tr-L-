@@ -75,7 +75,7 @@ const SeoWriter: React.FC = () => {
   };
 
   return (
-    <div className="w-full px-4 py-4 h-[calc(100vh-4rem)] flex flex-col">
+    <div className="w-full px-4 py-4 h-full flex flex-col">
       <div className="mb-4 shrink-0 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
