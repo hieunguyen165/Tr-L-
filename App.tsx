@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, RefreshCw, Search, Trash2, TrendingUp, AlertCircle, Globe, Folder, ArrowLeft, FolderPlus, ExternalLink, LayoutDashboard, PenTool, Menu, X, Image as ImageIcon, Shirt, MapPin, BarChart2, AlertTriangle, LogOut, Users, Clock, Wallet } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, TrendingUp, AlertCircle, Globe, Folder, FolderPlus, LayoutDashboard, PenTool, Menu, X, Image as ImageIcon, Shirt, MapPin, BarChart2, LogOut, Users, Clock, Wallet, Database } from 'lucide-react';
 import { KeywordTrack, RankHistoryItem, Project, User } from './types';
 import * as storageService from './services/storage';
 import * as geminiService from './services/gemini';
+import { auth } from './services/firebase';
 import AddKeywordModal from './components/AddKeywordModal';
 import AddProjectModal from './components/AddProjectModal';
 import SeoWriter from './components/SeoWriter';
@@ -14,8 +15,9 @@ import RankChart from './components/RankChart';
 import Login from './components/Login';
 import MemberManager from './components/MemberManager';
 import FinanceManager from './components/FinanceManager';
+import DataSettings from './components/DataSettings';
 
-type View = 'tracker' | 'writer' | 'image-gen' | 'fashion' | 'checkin' | 'analytics' | 'members' | 'finance';
+type View = 'tracker' | 'writer' | 'image-gen' | 'fashion' | 'checkin' | 'analytics' | 'members' | 'finance' | 'data-settings';
 
 const App: React.FC = () => {
   // Auth State
@@ -23,7 +25,7 @@ const App: React.FC = () => {
 
   // Navigation State
   const [currentView, setCurrentView] = useState<View>('tracker');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // For mobile/desktop toggle
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Rank Tracker State
   const [projects, setProjects] = useState<Project[]>([]);
@@ -36,76 +38,73 @@ const App: React.FC = () => {
   const [filterText, setFilterText] = useState('');
   const [globalLoading, setGlobalLoading] = useState(false);
   
-  const hasAutoCheckedRef = useRef(false);
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
-  // Load initial data
+  // Initialize Auth & Data Listeners
   useEffect(() => {
-    // Check Auth - Persist session
-    // Try localStorage first (Remember Me), then sessionStorage (One-time session)
-    let storedUserJson = localStorage.getItem('app_current_user');
-    if (!storedUserJson) {
-      storedUserJson = sessionStorage.getItem('app_current_user');
-    }
+    // Listen for Firebase Auth state changes
+    const unsubscribeAuth = auth.onAuthStateChanged(async (firebaseUser) => {
+        if (firebaseUser) {
+            const user: User = {
+                id: firebaseUser.uid,
+                username: firebaseUser.email || '',
+                password: '',
+                fullName: firebaseUser.displayName || 'User',
+                role: 'member', // Could fetch custom claims if needed
+                createdAt: Date.now()
+            };
+            setCurrentUser(user);
+            
+            // Try to migrate data if first time
+            await storageService.migrateLocalDataToFirebase();
 
-    if (storedUserJson) {
-      try {
-        const user = JSON.parse(storedUserJson);
-        setCurrentUser(user);
-      } catch (e) {
-        localStorage.removeItem('app_current_user');
-        sessionStorage.removeItem('app_current_user');
-      }
-    }
+        } else {
+            setCurrentUser(null);
+            setProjects([]);
+            setKeywords([]);
+        }
+    });
 
-    // Check if API KEY is present
     if (!process.env.API_KEY) {
       setIsApiKeyMissing(true);
     }
 
-    const loadedProjects = storageService.loadProjects();
-    const loadedKeywords = storageService.loadKeywords();
-    setProjects(loadedProjects);
-    setKeywords(loadedKeywords);
-
-    // Ensure root user exists even if not logged in
-    storageService.loadUsers();
-
-    // Global Auto-check (checks stale keywords across ALL projects)
-    if (!hasAutoCheckedRef.current) {
-      hasAutoCheckedRef.current = true;
-      const now = Date.now();
-      const ONE_DAY = 24 * 60 * 60 * 1000;
-      
-      const staleKeywords = loadedKeywords.filter(k => {
-        if (!k.lastChecked) return false;
-        return (now - k.lastChecked) > ONE_DAY;
-      });
-
-      if (staleKeywords.length > 0) {
-        // Silent update could be implemented here
-        // For now, we skip auto-run to keep UI simple
-      }
-    }
-    
-    // Auto-close sidebar on mobile on init
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
+
+    return () => unsubscribeAuth();
   }, []);
 
-  // Auth Handlers
-  const handleLoginSuccess = (user: User, remember: boolean) => {
-    const storage = remember ? localStorage : sessionStorage;
-    storage.setItem('app_current_user', JSON.stringify(user));
-    setCurrentUser(user);
+  // Listen for Data Changes when User is logged in
+  useEffect(() => {
+      if (!currentUser) return;
+
+      const unsubProjects = storageService.listenToProjects((data) => {
+          setProjects(data);
+          // If active project is deleted or not set, select first
+          if (data.length > 0 && !activeProjectId) {
+            // Optional: don't auto select to keep empty state
+          }
+      });
+
+      const unsubKeywords = storageService.listenToKeywords((data) => {
+          setKeywords(data);
+      });
+
+      return () => {
+          unsubProjects();
+          unsubKeywords();
+      };
+  }, [currentUser, activeProjectId]);
+
+
+  const handleLoginSuccess = (user: User) => {
+     // Handled by onAuthStateChanged, but kept for interface compatibility
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('app_current_user');
-    sessionStorage.removeItem('app_current_user');
-    setCurrentUser(null);
-    // Reset view states
+    auth.signOut();
     setCurrentView('tracker');
     setActiveProjectId(null);
   };
@@ -153,73 +152,52 @@ const App: React.FC = () => {
     if (idsToCheck.length === 0) return;
     
     setGlobalLoading(true);
+    
+    // Optimistic UI Update: Set loading state
     setKeywords(prev => prev.map(k => idsToCheck.includes(k.id) ? { ...k, isUpdating: true } : k));
 
     for (const id of idsToCheck) {
-      const currentAllKeywords = storageService.loadKeywords();
-      const item = currentAllKeywords.find(k => k.id === id);
+      const item = keywords.find(k => k.id === id);
       
       if (item) {
         const updatedItem = await performCheck(item);
-        
-        // Update storage
-        const newList = storageService.loadKeywords().map(k => k.id === id ? updatedItem : k);
-        storageService.saveKeywords(newList);
-        
-        // Update State
-        setKeywords(prev => prev.map(k => k.id === id ? updatedItem : k));
+        // Save to Firestore
+        const { id: itemId, ...data } = updatedItem;
+        await storageService.updateKeyword(itemId, data);
       }
       await new Promise(r => setTimeout(r, 1000));
     }
     
     setGlobalLoading(false);
-  }, [isApiKeyMissing]);
+  }, [keywords, isApiKeyMissing]);
 
 
   // --- HANDLERS (Rank Tracker) ---
 
   const handleAddProject = (name: string, domain: string) => {
-    const newProject = storageService.createNewProject(name, domain);
-    const updatedProjects = [newProject, ...projects];
-    setProjects(updatedProjects);
-    storageService.saveProjects(updatedProjects);
+    storageService.addProject(name, domain);
   };
 
   const handleDeleteProject = (projectId: string) => {
-    if (confirm('Bạn có chắc muốn xóa dự án này? Tất cả từ khóa bên trong sẽ bị xóa.')) {
-      const updatedProjects = projects.filter(p => p.id !== projectId);
-      setProjects(updatedProjects);
-      storageService.saveProjects(updatedProjects);
-
-      const updatedKeywords = keywords.filter(k => k.projectId !== projectId);
-      setKeywords(updatedKeywords);
-      storageService.saveKeywords(updatedKeywords);
-      
-      if (activeProjectId === projectId) {
-        setActiveProjectId(null);
-      }
+    if (confirm('Bạn có chắc muốn xóa dự án này? Tất cả từ khóa bên trong sẽ bị xóa vĩnh viễn.')) {
+        storageService.deleteProject(projectId);
+        if (activeProjectId === projectId) setActiveProjectId(null);
     }
   };
 
   const handleAddKeyword = (keywordList: string[], domain: string) => {
     if (!activeProjectId) return;
 
-    const newItems = keywordList.map(kw => 
-      storageService.createNewKeyword(kw, domain, activeProjectId)
-    );
-    
-    const updatedKeywords = [...newItems, ...keywords];
-    setKeywords(updatedKeywords);
-    storageService.saveKeywords(updatedKeywords);
-    
-    processBatch(newItems.map(item => item.id));
+    // Add individually to Firestore
+    keywordList.forEach(kw => {
+        storageService.addKeyword(kw, domain, activeProjectId);
+    });
+    // Trigger check not implemented immediately to save quota, user can click check all
   };
 
   const handleDeleteKeyword = (id: string) => {
     if (confirm('Bạn có chắc muốn xóa từ khóa này?')) {
-      const updated = keywords.filter(k => k.id !== id);
-      setKeywords(updated);
-      storageService.saveKeywords(updated);
+        storageService.deleteKeyword(id);
     }
   };
 
@@ -526,6 +504,18 @@ const App: React.FC = () => {
           <Wallet size={18} />
           Quản Lý Chi Tiêu
         </button>
+        
+        <button
+          onClick={() => { setCurrentView('data-settings'); if(window.innerWidth < 1024) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium transition ${
+            currentView === 'data-settings' 
+              ? 'bg-pink-600/10 text-pink-400 border border-pink-600/20' 
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Database size={18} />
+          Dữ Liệu & Cài Đặt
+        </button>
 
         {/* Admin Only Menu */}
         {currentUser?.role === 'admin' && (
@@ -603,6 +593,7 @@ const App: React.FC = () => {
             {currentView === 'checkin' && <CheckinGenerator />}
             {currentView === 'analytics' && <AnalyticsReporter projects={projects} />}
             {currentView === 'finance' && <FinanceManager />}
+            {currentView === 'data-settings' && <DataSettings />}
             {currentView === 'members' && currentUser.role === 'admin' && <MemberManager currentUser={currentUser} />}
         </div>
 

@@ -21,11 +21,16 @@ const MemberManager: React.FC<MemberManagerProps> = ({ currentUser }) => {
     loadData();
   }, []);
 
-  const loadData = () => {
-    setUsers(storageService.loadUsers());
+  const loadData = async () => {
+    try {
+      const data = await storageService.getUsers();
+      setUsers(data);
+    } catch (err) {
+      console.error("Failed to load users", err);
+    }
   };
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -36,7 +41,7 @@ const MemberManager: React.FC<MemberManagerProps> = ({ currentUser }) => {
     }
 
     try {
-      storageService.addUser({
+      await storageService.addUser({
         fullName: newFullName,
         username: newUsername,
         password: newPassword,
@@ -47,7 +52,7 @@ const MemberManager: React.FC<MemberManagerProps> = ({ currentUser }) => {
       setNewFullName('');
       setNewUsername('');
       setNewPassword('');
-      loadData();
+      await loadData();
       
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
@@ -55,11 +60,11 @@ const MemberManager: React.FC<MemberManagerProps> = ({ currentUser }) => {
     }
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
     if (confirm('Bạn có chắc muốn xóa thành viên này không?')) {
       try {
-        storageService.deleteUser(userId);
-        loadData();
+        await storageService.deleteUser(userId);
+        await loadData();
       } catch (err: any) {
         alert(err.message);
       }
